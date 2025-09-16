@@ -115,6 +115,46 @@ function generateUniqueHashes(count: number, digits = 4): string[] {
   return Array.from(set);
 }
 
+function generateSequentialHashesForStrips(strips: Strip[], digits = 4): string[][] {
+    const max = Math.pow(10, digits);
+    const used = new Set<string>();
+    const result: string[][] = [];
+
+    for (const s of strips) {
+        let attempts = 0;
+        let accepted: string[] | null = null;
+
+        while (attempts++ < max * 2 && !accepted) {
+            const base = Math.floor(Math.random() * max);
+            const seq: string[] = [];
+            let collision = false;
+
+            for (let i = 0; i < s.length; i++) {
+                const v = (base + i + 1) % max; // base+1, base+2, ...
+                const hash = v.toString().padStart(digits, "0");
+                if (used.has(hash)) {
+                    collision = true;
+                    break;
+                }
+                seq.push(hash);
+            }
+
+            if (!collision) {
+                seq.forEach(h => used.add(h));
+                accepted = seq;
+            }
+        }
+
+        if (!accepted) {
+            throw new Error("Não foi possível gerar hashes sequenciais únicas para todas as tiras.");
+        }
+        result.push(accepted);
+    }
+
+    return result;
+}
+
+
 function validateStrip(tickets: Ticket[]): { ok: boolean; missing: number[]; duplicates: number[] } {
   const all = tickets.flat();
   const seen = new Map<number, number>();
@@ -206,14 +246,8 @@ export default function App() {
                         const totalTickets = strips.reduce((acc, s) => acc + s.length, 0);
                     const currentCount = stripHashes.reduce((acc, s) => acc + s.length, 0);
                     if (currentCount !== totalTickets && totalTickets > 0) {
-                          const batchHashes = generateUniqueHashes(totalTickets, 4);
-                          const distributed: string[][] = [];
-                          let cursor = 0;
-                          for (const s of strips) {
-                                const slice = batchHashes.slice(cursor, cursor + s.length);
-                                distributed.push(slice);
-                                cursor += s.length;
-                              }
+                          // ALTERADO: usa sequência por tira (base aleatória + ordem interna)
+                          const distributed = generateSequentialHashesForStrips(strips, 4);
                           setStripHashes(distributed);
                         }
                   }, [strips]); // intencionalmente não depende de validityDate
@@ -227,18 +261,8 @@ export default function App() {
     const frozen = acceptedStrips.length;
     setStripValidity(Array(frozen).fill(validityDate));
 
-    // Gera hashes únicos (4 dígitos) sem repetição no pack inteiro (todas as cartelas de todas as tiras deste lote)
-    const totalTickets = acceptedStrips.reduce((acc, s) => acc + s.length, 0);
-    const batchHashes = generateUniqueHashes(totalTickets, 4);
-
-    // Distribui os hashes no mesmo ordenamento das cartelas
-    const distributed: string[][] = [];
-    let cursor = 0;
-    for (const s of acceptedStrips) {
-      const slice = batchHashes.slice(cursor, cursor + s.length);
-      distributed.push(slice);
-      cursor += s.length;
-    }
+    // ALTERADO: hashes sequenciais por tira (base aleatória), únicas no lote
+    const distributed = generateSequentialHashesForStrips(acceptedStrips, 4);
     setStripHashes(distributed);
   };
 
