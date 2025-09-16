@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 type Ticket = number[]; // 15 números
 type Strip = Ticket[];  // 6 cartelas
@@ -101,6 +101,20 @@ function generateStripsUnique(count: number): Strip[] {
   return strips;
 }
 
+// Gera 'count' códigos únicos de 4 dígitos (string), sem repetição no lote
+function generateUniqueHashes(count: number, digits = 4): string[] {
+  const max = Math.pow(10, digits);
+  if (count > max) {
+    throw new Error(`Não é possível gerar ${count} hashes únicos de ${digits} dígitos.`);
+  }
+  const set = new Set<string>();
+  while (set.size < count) {
+    const n = Math.floor(Math.random() * max);
+    set.add(n.toString().padStart(digits, "0"));
+  }
+  return Array.from(set);
+}
+
 function validateStrip(tickets: Ticket[]): { ok: boolean; missing: number[]; duplicates: number[] } {
   const all = tickets.flat();
   const seen = new Map<number, number>();
@@ -175,24 +189,64 @@ export default function App() {
   const [strips, setStrips] = useState<Strip[]>(() => [generateBalancedStrip()]);
   const [validityDate, setValidityDate] = useState<string>(""); // data de validade no rodapé
   const [stripValidity, setStripValidity] = useState<string[]>([]); // data “congelada” por tira
+  const [stripHashes, setStripHashes] = useState<string[][]>([]); // hashes por tira/cartela
 
   // Validação por tira (memoizada a partir do array)
   const validations = useMemo(() => strips.map(s => validateStrip(s)), [strips]);
 
+      // Gera hashes e validações "congeladas" na primeira carga e sempre que as tiras mudarem,
+          // garantindo que a tela inicial já venha com hash e validade por tira.
+              useEffect(() => {
+                   if (!strips.length) return;
+                    // Sincroniza validade "congelada" se necessário (não reagimos a mudanças do input de validade)
+                        if (stripValidity.length !== strips.length) {
+                          setStripValidity(Array(strips.length).fill(validityDate));
+                        }
+                    // Gera hashes se a quantidade atual não bate com o total de cartelas
+                        const totalTickets = strips.reduce((acc, s) => acc + s.length, 0);
+                    const currentCount = stripHashes.reduce((acc, s) => acc + s.length, 0);
+                    if (currentCount !== totalTickets && totalTickets > 0) {
+                          const batchHashes = generateUniqueHashes(totalTickets, 4);
+                          const distributed: string[][] = [];
+                          let cursor = 0;
+                          for (const s of strips) {
+                                const slice = batchHashes.slice(cursor, cursor + s.length);
+                                distributed.push(slice);
+                                cursor += s.length;
+                              }
+                          setStripHashes(distributed);
+                        }
+                  }, [strips]); // intencionalmente não depende de validityDate
+
   const handleGenerate = () => {
     const target = Math.max(1, Math.min(9999, Math.floor(qty || 1)));
     const newStrips = generateStripsUnique(target);
-    setStrips(newStrips.length ? newStrips : [generateBalancedStrip()]);
+    const acceptedStrips = newStrips.length ? newStrips : [generateBalancedStrip()];
+    setStrips(acceptedStrips);
     // congela a validade para as tiras geradas agora
-    const frozen = (newStrips.length ? newStrips.length : 1);
+    const frozen = acceptedStrips.length;
     setStripValidity(Array(frozen).fill(validityDate));
+
+    // Gera hashes únicos (4 dígitos) sem repetição no pack inteiro (todas as cartelas de todas as tiras deste lote)
+    const totalTickets = acceptedStrips.reduce((acc, s) => acc + s.length, 0);
+    const batchHashes = generateUniqueHashes(totalTickets, 4);
+
+    // Distribui os hashes no mesmo ordenamento das cartelas
+    const distributed: string[][] = [];
+    let cursor = 0;
+    for (const s of acceptedStrips) {
+      const slice = batchHashes.slice(cursor, cursor + s.length);
+      distributed.push(slice);
+      cursor += s.length;
+    }
+    setStripHashes(distributed);
   };
 
   const handlePrint = () => {
     window.print();
   };
 
-    return (
+  return (
     <div style={styles.page} className="landscape">
       <style>
         {`
@@ -364,34 +418,39 @@ export default function App() {
             </div>
 
             <div style={styles.stripGrid} className="ticket-grid">
-              {tickets.map((ticket, idx) => (
-                <div key={idx} style={styles.ticketCard} className="ticket-card">
-                  <div style={styles.ticketHeader} className="ticket-header">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                      <span style={styles.establishment} className="establishment">Vispa Altas Horas</span>
-                      <div style={{ whiteSpace: "nowrap" }}>
-                        <span style={styles.smallLabel}>Validade:  {formatDate(stripValidity[0] || validityDate)}</span>
-                        <span>{formatDate(stripValidity[stripIdx] || "")}</span>
+              {tickets.map((ticket, idx) => {
+                const hash = stripHashes[stripIdx]?.[idx] ?? "";
+                return (
+                  <div key={idx} style={styles.ticketCard} className="ticket-card">
+                    <div style={styles.ticketHeader} className="ticket-header">
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, width: "100%" }}>
+                        <span style={styles.establishment} className="establishment">Vispa Altas Horas</span>
+                        <span style={styles.hashBadge}>{hash}</span>
+                        <div style={{ whiteSpace: "nowrap" }}>
+                          <span style={styles.smallLabel}>
+                            Validade: {formatDate(stripValidity[stripIdx] || validityDate)}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                    <div style={styles.ticketBody} className="ticket-body">
+                      {ticketToGrid(ticket).map((row, rIdx) => (
+                        <div key={rIdx} style={styles.ticketRow} className="ticket-row">
+                          {row.map((n, cIdx) => (
+                            <div
+                              key={`${rIdx}-${cIdx}`}
+                              style={{ ...styles.cell, ...(n == null ? styles.cellEmpty : {}) }}
+                              className="cell"
+                            >
+                              {n ?? ""}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div style={styles.ticketBody} className="ticket-body">
-                    {ticketToGrid(ticket).map((row, rIdx) => (
-                      <div key={rIdx} style={styles.ticketRow} className="ticket-row">
-                        {row.map((n, cIdx) => (
-                          <div
-                            key={`${rIdx}-${cIdx}`}
-                            style={{ ...styles.cell, ...(n == null ? styles.cellEmpty : {}) }}
-                            className="cell"
-                          >
-                            {n ?? ""}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div style={styles.stripFooter} className="strip-footer">
@@ -404,114 +463,123 @@ export default function App() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    maxWidth: 1800, // mais largo para caber melhor em paisagem
-    margin: "0 auto",
-    padding: 16,
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    printColorAdjust: "exact" as any, // garante reprodução de cores na impressão
-    WebkitPrintColorAdjust: "exact" as any,
-  },
-  actions: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    margin: "12px 0 20px",
-    printColorAdjust: "exact" as any,
-  },
-  input: {
-    width: 160,
-    padding: "8px 10px",
-    borderRadius: 8,
-    border: "1px solid #ccc",
-    outline: "none",
-  },
-  button: {
-    padding: "10px 14px",
-    borderRadius: 8,
-    border: "1px solid #1976d2",
-    background: "#1976d2",
-    color: "#fff",
-    cursor: "pointer",
-    fontWeight: 600,
-  },
-  stripContainer: {
-    pageBreakInside: "avoid",
-  },
-  stripContainerWithBreak: {
-    marginTop: 16,
-    pageBreakBefore: "always",
-    pageBreakInside: "avoid",
-  },
-  stripHeaderRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    margin: "4px 0 10px",
-  },
-  stripGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", // cartelas mais largas na tela
-    gap: 12,
-  },
-  ticketCard: {
-    border: "2px solid #424242", // borda mais forte
-    borderRadius: 10,
-    overflow: "hidden",
-    background: "#fff",
-    boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
-  },
-  ticketHeader: {
-    background: "#e0e0e0", // cabeçalho com contraste maior
-    color: "#111",
-    padding: "8px 10px",
-    fontWeight: 800, // mais espesso
-    letterSpacing: "0.3px", // mais “larga”
-    borderBottom: "2px solid #424242", // linha mais forte
-  },
-  ticketBody: {
-    padding: 10,
-  },
-  ticketRow: {
-    display: "grid",
-    gridTemplateColumns: "repeat(9, 1fr)", // 9 colunas: [1-9], [10-19], ..., [80-90]
-    gap: 6,
-    marginBottom: 6,
-  },
-  cell: {
-    // Centradas e quadradas
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    aspectRatio: "1 / 1",
-
-    // Visual
-    textAlign: "center",
-    padding: 0, // sem padding para manter o quadrado
-    borderRadius: 6,
-    background: "#ffffff",
-    border: "2px solid #424242",
-    color: "#111",
-    fontWeight: 800,
-    letterSpacing: "0.5px",
-    fontVariantNumeric: "tabular-nums",
-    fontSize: 18, // números maiores na tela
-    // sem minHeight para não alongar verticalmente
-    printColorAdjust: "exact" as any,
-    WebkitPrintColorAdjust: "exact" as any,
-  },
-  cellEmpty: {
-    background: "#6b7280", // cinza escuro (não preto)
-  },
-  stripFooter: {
-    marginTop: 12,
-    paddingTop: 8,
-    borderTop: "1px solid #e0e0e0",
-    color: "#424242",
-    fontSize: 12,
-    display: "flex",
-    justifyContent: "flex-end",
-    pageBreakInside: "avoid",
-  },
+const styles = {
+    page: {
+        margin: "0 auto",
+        padding: 16,
+        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+        printColorAdjust: "exact" as any,
+        WebkitPrintColorAdjust: "exact" as any,
+    },
+    actions: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        margin: "12px 0 20px",
+        printColorAdjust: "exact" as any,
+    },
+    input: {
+        width: 160,
+        padding: "8px 10px",
+        borderRadius: 8,
+        border: "1px solid #ccc",
+        outline: "none",
+    },
+    button: {
+        padding: "10px 14px",
+        borderRadius: 8,
+        border: "1px solid #1976d2",
+        background: "#1976d2",
+        color: "#fff",
+        cursor: "pointer",
+        fontWeight: 600,
+    },
+    stripContainer: {
+        pageBreakInside: "avoid",
+    },
+    stripContainerWithBreak: {
+        marginTop: 16,
+        pageBreakBefore: "always",
+        pageBreakInside: "avoid",
+    },
+    stripHeaderRow: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        margin: "4px 0 10px",
+    },
+    stripGrid: {
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+        gap: 12,
+    },
+    ticketCard: {
+        border: "2px solid #424242",
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "#fff",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+    },
+    ticketHeader: {
+        background: "#e0e0e0",
+        color: "#111",
+        padding: "8px 10px",
+        fontWeight: 800,
+        letterSpacing: "0.3px",
+        borderBottom: "2px solid #424242",
+    },
+    establishment: {
+        fontWeight: 800,
+        letterSpacing: "0.3px",
+    },
+    hashBadge: {
+        fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+        fontWeight: 800,
+        color: "#111",
+        background: "transparent",
+        padding: "0 4px",
+        letterSpacing: "0.5px",
+        borderRadius: 4,
+    },
+    ticketBody: {
+        padding: 10,
+    },
+    ticketRow: {
+        display: "grid",
+        gridTemplateColumns: "repeat(9, 1fr)",
+        gap: 6,
+        marginBottom: 6,
+    },
+    cell: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        aspectRatio: "1 / 1",
+        textAlign: "center",
+        padding: 0,
+        borderRadius: 6,
+        background: "#ffffff",
+        border: "2px solid #424242",
+        color: "#111",
+        fontWeight: 800,
+        letterSpacing: "0.5px",
+        fontVariantNumeric: "tabular-nums",
+        fontSize: 18,
+        printColorAdjust: "exact" as any,
+        WebkitPrintColorAdjust: "exact" as any,
+    },
+    cellEmpty: {
+        background: "#6b7280",
+    },
+    stripFooter: {
+        marginTop: 12,
+        paddingTop: 8,
+        borderTop: "1px solid #e0e0e0",
+        color: "#424242",
+        fontSize: 12,
+        display: "flex",
+        justifyContent: "flex-end",
+        pageBreakInside: "avoid",
+    },
 };
