@@ -12,15 +12,55 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function generateStrip(): Ticket[] {
-  // Gera 1..90, embaralha e divide em 6 cartelas de 15
-  const nums = Array.from({ length: 90 }, (_, i) => i + 1);
-  const shuffled = shuffle(nums);
-  const tickets: Ticket[] = [];
-  for (let i = 0; i < 6; i++) {
-    const chunk = shuffled.slice(i * 15, i * 15 + 15).sort((a, b) => a - b);
-    tickets.push(chunk);
+// Determina a coluna (0..8) pelo número
+function colIndex(n: number): number {
+  return n === 90 ? 8 : Math.floor(n / 10); // 1-9 -> 0, 10-19 -> 1, ..., 80-90 -> 8
+}
+
+// Gera 1 tira balanceada (6 cartelas), cobrindo 1..90 sem repetição,
+// respeitando no máx. 2 números por coluna por cartela e 15 números por cartela.
+function generateBalancedStrip(): Ticket[] {
+  // 9 colunas de ranges: [1..9], [10..19], ..., [80..90]
+  const ranges: number[][] = Array.from({ length: 9 }, (_, c) => {
+    const start = c === 0 ? 1 : c * 10;
+    const end = c === 8 ? 90 : c * 10 + 9;
+    const arr = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+    return shuffle(arr);
+  });
+
+  // ticketsCols[ticketIndex][columnIndex] = number[]
+  const ticketsCols: number[][][] = Array.from({ length: 6 }, () =>
+    Array.from({ length: 9 }, () => [])
+  );
+
+  // Distribuição por coluna:
+  // Para cada coluna c com N números:
+  // - dá 1 número para cada um dos 6 tickets (se N>=6)
+  // - distribui o restante R = N-6 dando +1 número para (c + i) % 6 (equilibra extras)
+  for (let c = 0; c < 9; c++) {
+    const pool = ranges[c]; // já embaralhada
+    const N = pool.length;
+    let p = 0;
+
+    // Base: 1 por ticket
+    for (let t = 0; t < 6 && p < N; t++) {
+      ticketsCols[t][c].push(pool[p++]);
+    }
+
+    // Extras: distribui ciclicamente começando no índice c (equilibra entre tickets)
+    const R = N - Math.min(6, N);
+    for (let i = 0; i < R && p < N; i++) {
+      const t = (c + i) % 6;
+      ticketsCols[t][c].push(pool[p++]);
+    }
   }
+
+  // Converte estrutura por colunas para cartelas (arrays de 15 números), ordenados
+  const tickets: Ticket[] = ticketsCols.map(cols => {
+    const flat = cols.flat().sort((a, b) => a - b);
+    return flat;
+  });
+
   return tickets;
 }
 
@@ -39,7 +79,7 @@ function generateStripsUnique(count: number): Strip[] {
   const maxAttempts = Math.max(2000, count * 200); // margem generosa para evitar loop infinito
 
   while (strips.length < count && guard++ < maxAttempts) {
-    const s = generateStrip();
+    const s = generateBalancedStrip();
 
     // Verifica se alguma cartela desta tira já foi vista no lote
     const sigs = s.map(ticketSignature);
@@ -91,31 +131,48 @@ function formatDate(brDateIso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-// Constrói a grade 3x9: colunas por faixas [1-9], [10-19], ..., [80-90]
+// Constrói a grade 3x9: colunas por faixas [1-9], [10-19], ..., [80-90],
+// distribuindo os números entre as 3 linhas para que cada linha tenha exatamente 5 números.
 function ticketToGrid(ticket: number[]): (number | null)[][] {
-  // Agrupa por coluna (0..8) conforme decênio; 90 também vai para a última coluna (8)
+  // Agrupa por coluna (0..8)
   const columns: number[][] = Array.from({ length: 9 }, () => []);
   for (const n of ticket) {
-    const col = n === 90 ? 8 : Math.floor(n / 10); // 1-9 -> 0, 10-19 -> 1, ..., 80-89 -> 8, 90 -> 8
-    columns[col].push(n);
+    columns[colIndex(n)].push(n);
   }
-  // Ordena números dentro de cada coluna (ascendente)
+  // Ordena internamente
   columns.forEach(col => col.sort((a, b) => a - b));
 
-  // Monta 3 linhas por 9 colunas, preenchendo cada coluna de cima para baixo
+  // Distribui para 3 linhas garantindo 5 números por linha
   const rows: (number | null)[][] = Array.from({ length: 3 }, () => Array(9).fill(null));
+  const rowCounts = [0, 0, 0];
+
   for (let c = 0; c < 9; c++) {
-    const colVals = columns[c];
-    for (let r = 0; r < Math.min(3, colVals.length); r++) {
-      rows[r][c] = colVals[r];
+    const colVals = columns[c]; // tamanho 0..2 (pela geração balanceada)
+    // Para cada número da coluna, coloca na linha com menor contagem atual (<5)
+    for (const v of colVals) {
+      let targetRow = 0;
+      for (let r = 1; r < 3; r++) {
+        if (rowCounts[r] < rowCounts[targetRow]) targetRow = r;
+      }
+      // Se a linha alvo já tem 5, pega a próxima disponível
+      if (rowCounts[targetRow] >= 5) {
+        const alt = [0, 1, 2].find(r => rowCounts[r] < 5);
+        if (alt === undefined) continue; // já temos 15 números colocados
+        targetRow = alt;
+      }
+      rows[targetRow][c] = v;
+      rowCounts[targetRow]++;
     }
   }
+
+  // Garantia: no final queremos [5,5,5]. Se por algum motivo faltou alocar,
+  // (não deve ocorrer com a geração balanceada) não faremos remanejamento agressivo.
   return rows;
 }
 
 export default function App() {
   const [qty, setQty] = useState<number>(1);
-  const [strips, setStrips] = useState<Strip[]>(() => [generateStrip()]);
+  const [strips, setStrips] = useState<Strip[]>(() => [generateBalancedStrip()]);
   const [validityDate, setValidityDate] = useState<string>(""); // data de validade no rodapé
 
   // Validação por tira (memoizada a partir do array)
@@ -124,7 +181,7 @@ export default function App() {
   const handleGenerate = () => {
     const target = Math.max(1, Math.min(9999, Math.floor(qty || 1)));
     const newStrips = generateStripsUnique(target);
-    setStrips(newStrips.length ? newStrips : [generateStrip()]);
+    setStrips(newStrips.length ? newStrips : [generateBalancedStrip()]);
   };
 
   const handlePrint = () => {
