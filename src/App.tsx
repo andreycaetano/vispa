@@ -188,7 +188,7 @@ export default function App() {
     window.print();
   };
 
-  return (
+    return (
     <div style={styles.page} className="landscape">
       <style>
         {`
@@ -205,71 +205,82 @@ export default function App() {
             .landscape {
               max-width: none !important;
             }
-            /* Duas cartelas por linha para ficarem mais largas */
+            /* Três cartelas por linha na impressão */
             .ticket-grid {
-              grid-template-columns: repeat(2, 1fr) !important;
+              grid-template-columns: repeat(3, 1fr) !important;
               gap: 14px !important;
             }
-            /* Células maiores e texto mais legível */
+            /* Células com fonte maior na impressão */
             .ticket-row .cell {
               font-size: 14pt !important;
               padding: 10pt 0 !important;
             }
+            /* Oculta cabeçalho/configurações na impressão */
+            .no-print {
+              display: none !important;
+            }
           }
         `}
       </style>
-      <h1 style={{ marginBottom: 8 }}>Gerador de Cartelas (1 a 90)</h1>
-      <p style={{ marginTop: 0, color: "#555" }}>
-        Cada tira contém 6 cartelas de 15 números. A união das 6 cartelas cobre 1..90 sem repetição.
-      </p>
 
-      <div style={styles.actions}>
-        <label style={{ fontWeight: 600 }} htmlFor="qty">Quantidade de tiras:</label>
-        <input
-          id="qty"
-          type="number"
-          min={1}
-          max={9999}
-          value={qty}
-          onChange={(e) => setQty(Number(e.target.value))}
-          style={styles.input}
-        />
-        <label style={{ fontWeight: 600 }} htmlFor="validity">Validade:</label>
-        <input
-          id="validity"
-          type="date"
-          value={validityDate}
-          onChange={(e) => setValidityDate(e.target.value)}
-          style={styles.input}
-        />
-        <button onClick={handleGenerate} style={styles.button}>Gerar {qty} {qty === 1 ? "Tira" : "Tiras"}</button>
-        <button onClick={handlePrint} style={{ ...styles.button, marginLeft: 8, background: "#2e7d32", borderColor: "#2e7d32" }}>
-          Imprimir
-        </button>
+      <div className="no-print">
+        <h1 style={{ marginBottom: 8 }}>Gerador de Cartelas (1 a 90)</h1>
+        <p style={{ marginTop: 0, color: "#555" }}>
+          Cada tira contém 6 cartelas de 15 números. A união das 6 cartelas cobre 1..90 sem repetição.
+        </p>
+
+        <div style={styles.actions}>
+          <label style={{ fontWeight: 600 }} htmlFor="qty">Quantidade de tiras:</label>
+          <input
+            id="qty"
+            type="number"
+            min={1}
+            max={9999}
+            value={qty}
+            onChange={(e) => setQty(Number(e.target.value))}
+            style={styles.input}
+          />
+          <label style={{ fontWeight: 600 }} htmlFor="validity">Validade:</label>
+          <input
+            id="validity"
+            type="date"
+            value={validityDate}
+            onChange={(e) => setValidityDate(e.target.value)}
+            style={styles.input}
+          />
+          <button onClick={handleGenerate} style={styles.button}>
+            Gerar {qty} {qty === 1 ? "Tira" : "Tiras"}
+          </button>
+          <button
+            onClick={handlePrint}
+            style={{ ...styles.button, marginLeft: 8, background: "#2e7d32", borderColor: "#2e7d32" }}
+          >
+            Imprimir
+          </button>
+        </div>
       </div>
 
       {strips.map((tickets, stripIdx) => {
-        const validation = validations[stripIdx];
+        const v = validations[stripIdx];
+        const stripStyle =
+          stripIdx === 0 ? styles.stripContainer : styles.stripContainerWithBreak;
+
         return (
-          <div key={stripIdx} style={stripIdx > 0 ? styles.stripContainerWithBreak : styles.stripContainer}>
+          <div key={stripIdx} style={stripStyle}>
             <div style={styles.stripHeaderRow}>
-              <h2 style={{ margin: 0 }}>Tira {stripIdx + 1}</h2>
-              <span
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 6,
-                  background: validation.ok ? "#e8f5e9" : "#ffebee",
-                  color: validation.ok ? "#1b5e20" : "#b71c1c",
-                  fontWeight: 600,
-                }}
-                title={
-                  validation.ok
-                    ? "Tira válida: contém todos os números de 1 a 90 sem repetição."
-                    : `Há inconsistências: faltando [${validation.missing.join(", ")}], duplicados [${validation.duplicates.join(", ")}]`
-                }
-              >
-                {validation.ok ? "Válida" : "Inválida"}
-              </span>
+              <div>
+                <strong>Tira #{stripIdx + 1}</strong>
+                {v && !v.ok && (
+                  <span style={{ color: "#b71c1c", marginLeft: 8 }}>
+                    Inválida: faltam [{v.missing.join(", ")}], duplicados [{v.duplicates.join(", ")}]
+                  </span>
+                )}
+              </div>
+              {validityDate && (
+                <div style={{ color: "#555" }}>
+                  Validade: {formatDate(validityDate)}
+                </div>
+              )}
             </div>
 
             <div style={styles.stripGrid} className="ticket-grid">
@@ -280,7 +291,11 @@ export default function App() {
                     {ticketToGrid(ticket).map((row, rIdx) => (
                       <div key={rIdx} style={styles.ticketRow} className="ticket-row">
                         {row.map((n, cIdx) => (
-                          <div key={`${rIdx}-${cIdx}`} style={styles.cell} className="cell">
+                          <div
+                            key={`${rIdx}-${cIdx}`}
+                            style={styles.cell}
+                            className="cell"
+                          >
                             {n ?? ""}
                           </div>
                         ))}
@@ -291,26 +306,16 @@ export default function App() {
               ))}
             </div>
 
-            {/* Rodapé com data de validade */}
-            {validityDate && (
-              <div style={styles.stripFooter}>
-                Validade: {formatDate(validityDate)}
-              </div>
-            )}
-
-            {!validation.ok && (
-              <div style={{ marginTop: 12, color: "#b71c1c", pageBreakInside: "avoid" }}>
-                <div><strong>Faltando:</strong> {validation.missing.join(", ") || "-"}</div>
-                <div><strong>Duplicados:</strong> {validation.duplicates.join(", ") || "-"}</div>
-              </div>
-            )}
+            <div style={styles.stripFooter}>
+              {!v || v.ok ? "OK" : "Há problemas nesta tira (veja acima)."}
+            </div>
           </div>
         );
       })}
     </div>
   );
 }
-
+// ... existing code ...
 const styles: Record<string, React.CSSProperties> = {
   page: {
     maxWidth: 1400, // mais largo para caber melhor em paisagem
