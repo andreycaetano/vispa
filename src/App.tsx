@@ -91,6 +91,28 @@ function formatDate(brDateIso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+// Constrói a grade 3x9: colunas por faixas [1-9], [10-19], ..., [80-90]
+function ticketToGrid(ticket: number[]): (number | null)[][] {
+  // Agrupa por coluna (0..8) conforme decênio; 90 também vai para a última coluna (8)
+  const columns: number[][] = Array.from({ length: 9 }, () => []);
+  for (const n of ticket) {
+    const col = n === 90 ? 8 : Math.floor(n / 10); // 1-9 -> 0, 10-19 -> 1, ..., 80-89 -> 8, 90 -> 8
+    columns[col].push(n);
+  }
+  // Ordena números dentro de cada coluna (ascendente)
+  columns.forEach(col => col.sort((a, b) => a - b));
+
+  // Monta 3 linhas por 9 colunas, preenchendo cada coluna de cima para baixo
+  const rows: (number | null)[][] = Array.from({ length: 3 }, () => Array(9).fill(null));
+  for (let c = 0; c < 9; c++) {
+    const colVals = columns[c];
+    for (let r = 0; r < Math.min(3, colVals.length); r++) {
+      rows[r][c] = colVals[r];
+    }
+  }
+  return rows;
+}
+
 export default function App() {
   const [qty, setQty] = useState<number>(1);
   const [strips, setStrips] = useState<Strip[]>(() => [generateStrip()]);
@@ -110,7 +132,35 @@ export default function App() {
   };
 
   return (
-    <div style={styles.page}>
+    <div style={styles.page} className="landscape">
+      <style>
+        {`
+          @page {
+            size: A4 landscape;
+            margin: 10mm;
+          }
+          @media print {
+            html, body {
+              width: 297mm;
+              height: 210mm;
+            }
+            /* Expande conteúdo na impressão em paisagem */
+            .landscape {
+              max-width: none !important;
+            }
+            /* Duas cartelas por linha para ficarem mais largas */
+            .ticket-grid {
+              grid-template-columns: repeat(2, 1fr) !important;
+              gap: 14px !important;
+            }
+            /* Células maiores e texto mais legível */
+            .ticket-row .cell {
+              font-size: 14pt !important;
+              padding: 10pt 0 !important;
+            }
+          }
+        `}
+      </style>
       <h1 style={{ marginBottom: 8 }}>Gerador de Cartelas (1 a 90)</h1>
       <p style={{ marginTop: 0, color: "#555" }}>
         Cada tira contém 6 cartelas de 15 números. A união das 6 cartelas cobre 1..90 sem repetição.
@@ -165,15 +215,17 @@ export default function App() {
               </span>
             </div>
 
-            <div style={styles.stripGrid}>
+            <div style={styles.stripGrid} className="ticket-grid">
               {tickets.map((ticket, idx) => (
                 <div key={idx} style={styles.ticketCard}>
                   <div style={styles.ticketHeader}>Cartela {idx + 1}</div>
                   <div style={styles.ticketBody}>
-                    {chunk(ticket, 5).map((row, rIdx) => (
-                      <div key={rIdx} style={styles.ticketRow}>
-                        {row.map((n) => (
-                          <div key={n} style={styles.cell}>{n}</div>
+                    {ticketToGrid(ticket).map((row, rIdx) => (
+                      <div key={rIdx} style={styles.ticketRow} className="ticket-row">
+                        {row.map((n, cIdx) => (
+                          <div key={`${rIdx}-${cIdx}`} style={styles.cell} className="cell">
+                            {n ?? ""}
+                          </div>
                         ))}
                       </div>
                     ))}
@@ -204,10 +256,12 @@ export default function App() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    maxWidth: 1100,
+    maxWidth: 1400, // mais largo para caber melhor em paisagem
     margin: "0 auto",
     padding: 16,
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
+    printColorAdjust: "exact" as any, // garante reprodução de cores na impressão
+    WebkitPrintColorAdjust: "exact" as any,
   },
   actions: {
     display: "flex",
@@ -248,38 +302,46 @@ const styles: Record<string, React.CSSProperties> = {
   },
   stripGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", // cartelas mais largas na tela
     gap: 12,
   },
   ticketCard: {
-    border: "1px solid #e0e0e0",
+    border: "2px solid #424242", // borda mais forte
     borderRadius: 10,
     overflow: "hidden",
     background: "#fff",
     boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
   },
   ticketHeader: {
-    background: "#f5f5f5",
+    background: "#e0e0e0", // cabeçalho com contraste maior
+    color: "#111",
     padding: "8px 10px",
-    fontWeight: 700,
-    borderBottom: "1px solid #e0e0e0",
+    fontWeight: 800, // mais espesso
+    letterSpacing: "0.3px", // mais “larga”
+    borderBottom: "2px solid #424242", // linha mais forte
   },
   ticketBody: {
     padding: 10,
   },
   ticketRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: "repeat(9, 1fr)", // 9 colunas: [1-9], [10-19], ..., [80-90]
     gap: 6,
     marginBottom: 6,
   },
   cell: {
     textAlign: "center",
-    padding: "10px 0",
+    padding: "12px 0", // um pouco mais alto para legibilidade
     borderRadius: 6,
-    background: "#fafafa",
-    border: "1px solid #e0e0e0",
-    fontWeight: 600,
+    background: "#ffffff", // fundo branco para máximo contraste
+    border: "2px solid #424242", // borda mais forte
+    color: "#111", // texto mais escuro
+    fontWeight: 800, // números mais espessos
+    letterSpacing: "0.5px", // números mais “largos”
+    fontVariantNumeric: "tabular-nums", // dígitos com largura uniforme (melhora leitura)
+    minHeight: 36,
+    printColorAdjust: "exact" as any,
+    WebkitPrintColorAdjust: "exact" as any,
   },
   stripFooter: {
     marginTop: 12,
