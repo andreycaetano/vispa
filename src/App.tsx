@@ -194,30 +194,77 @@ export default function App() {
         {`
           @page {
             size: A4 landscape;
-            margin: 10mm;
+            margin: 5mm; /* antes 10mm: mais largura útil */
           }
           @media print {
             html, body {
               width: 297mm;
               height: 210mm;
             }
-            /* Expande conteúdo na impressão em paisagem */
+            /* Consistência de medida e evita cortar a última coluna */
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+            }
+            /* Usar toda a largura disponível no print */
             .landscape {
               max-width: none !important;
-            }
-            /* Três cartelas por linha na impressão */
-            .ticket-grid {
-              grid-template-columns: repeat(3, 1fr) !important;
-              gap: 14px !important;
-            }
-            /* Células com fonte maior na impressão (sem padding para manter quadrado) */
-            .ticket-row .cell {
-              font-size: 16pt !important;
               padding: 0 !important;
             }
-            /* Oculta cabeçalho/configurações na impressão */
+            /* Esconde cabeçalho/rodapé e controles no print */
+            .strip-header,
+            .strip-footer,
             .no-print {
               display: none !important;
+            }
+            /* 2 colunas x 3 linhas, com gaps menores para ampliar as cartelas */
+            .ticket-grid {
+              grid-template-columns: repeat(2, 1fr) !important;
+              grid-template-rows: repeat(3, 1fr) !important;
+              gap: 1.2mm !important;              /* antes 3mm: mais espaço para as cartelas */
+              width: 100% !important;
+              max-width: 100% !important; /* garante que não haja contração */
+              inline-size: 100vw !important; 
+              height: 100vh !important;
+              align-content: stretch !important;
+              align-items: stretch !important;
+            }
+            /* Cartela ocupa toda a célula, sem cortes */
+            .ticket-card {
+              width: 100% !important;
+              height: 100% !important;
+              display: flex !important;
+              align-items: stretch !important;
+              justify-content: stretch !important;
+              border: 1mm solid #424242 !important;
+              border-radius: 2mm !important;
+              overflow: visible !important;     /* não corta a coluna final */
+              background: #fff !important;
+            }
+            /* Centraliza verticalmente as linhas dentro da cartela */
+            .ticket-body {
+              width: 100% !important;
+              max-width: 100% !important;
+              height: 100% !important;
+              padding: 1.8mm !important;        /* padding menor => mais área útil */
+              display: flex !important;
+              flex-direction: column !important;
+              justify-content: center !important;
+            }
+            /* Gaps mais compactos dentro da cartela */
+            .ticket-row {
+              gap: 1mm !important;            /* antes 2mm */
+              margin-bottom: 1.6mm !important;
+            }
+            .ticket-row:last-child {
+              margin-bottom: 0 !important;
+            }
+            /* Células quadradas, números maiores, sem distorcer */
+            .ticket-row .cell {
+              aspect-ratio: 1 / 1 !important;   /* mantém quadrado */
+              font-size: 9.2mm !important;      /* números maiores */
+              padding: 0 !important;
+              border: 0.28mm solid #424242 !important;
+              border-radius: 1.2mm !important;
             }
           }
         `}
@@ -267,7 +314,7 @@ export default function App() {
 
         return (
           <div key={stripIdx} style={stripStyle}>
-            <div style={styles.stripHeaderRow}>
+            <div style={styles.stripHeaderRow} className="strip-header">
               <div>
                 <strong>Tira #{stripIdx + 1}</strong>
                 {v && !v.ok && (
@@ -285,31 +332,27 @@ export default function App() {
 
             <div style={styles.stripGrid} className="ticket-grid">
               {tickets.map((ticket, idx) => (
-                <div key={idx} style={styles.ticketCard}>
-                  <div style={styles.ticketHeader}>Cartela {idx + 1}</div>
-                  <div style={styles.ticketBody}>
-                    {ticketToGrid(ticket).map((row, rIdx) => (
-                      <div key={rIdx} style={styles.ticketRow} className="ticket-row">
-                        {row.map((n, cIdx) => {
-                          const isEmpty = n == null;
-                          return (
-                            <div
-                              key={`${rIdx}-${cIdx}`}
-                              style={{ ...styles.cell, ...(isEmpty ? styles.cellEmpty : {}) }}
-                              className="cell"
-                            >
-                              {n ?? ""}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
+                <div key={idx} style={styles.ticketCard} className="ticket-card">
+                   <div style={styles.ticketBody} className="ticket-body">
+                     {ticketToGrid(ticket).map((row, rIdx) => (
+                       <div key={rIdx} style={styles.ticketRow} className="ticket-row">
+                         {row.map((n, cIdx) => (
+                           <div
+                             key={`${rIdx}-${cIdx}`}
+                             style={{ ...styles.cell, ...(n == null ? styles.cellEmpty : {}) }}
+                             className="cell"
+                           >
+                             {n ?? ""}
+                           </div>
+                         ))}
+                       </div>
+                     ))}
+                   </div>
                 </div>
               ))}
             </div>
 
-            <div style={styles.stripFooter}>
+            <div style={styles.stripFooter} className="strip-footer">
               {!v || v.ok ? "OK" : "Há problemas nesta tira (veja acima)."}
             </div>
           </div>
@@ -318,10 +361,10 @@ export default function App() {
     </div>
   );
 }
-// ... existing code ...
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    maxWidth: 1400, // mais largo para caber melhor em paisagem
+    maxWidth: 1800, // mais largo para caber melhor em paisagem
     margin: "0 auto",
     padding: 16,
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
