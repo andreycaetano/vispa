@@ -174,6 +174,7 @@ export default function App() {
   const [qty, setQty] = useState<number>(1);
   const [strips, setStrips] = useState<Strip[]>(() => [generateBalancedStrip()]);
   const [validityDate, setValidityDate] = useState<string>(""); // data de validade no rodapé
+  const [stripValidity, setStripValidity] = useState<string[]>([]); // data “congelada” por tira
 
   // Validação por tira (memoizada a partir do array)
   const validations = useMemo(() => strips.map(s => validateStrip(s)), [strips]);
@@ -182,6 +183,9 @@ export default function App() {
     const target = Math.max(1, Math.min(9999, Math.floor(qty || 1)));
     const newStrips = generateStripsUnique(target);
     setStrips(newStrips.length ? newStrips : [generateBalancedStrip()]);
+    // congela a validade para as tiras geradas agora
+    const frozen = (newStrips.length ? newStrips.length : 1);
+    setStripValidity(Array(frozen).fill(validityDate));
   };
 
   const handlePrint = () => {
@@ -216,15 +220,27 @@ export default function App() {
             .no-print {
               display: none !important;
             }
+            /* Cabeçalho dentro da cartela (compacto) */
+            .ticket-header {
+              padding: 1.2mm 1.6mm !important;
+              border-bottom: 0.4mm solid #424242 !important;
+              background: #e0e0e0 !important;
+              font-size: 3.2mm !important;
+              line-height: 1.1 !important;
+            }
+            .ticket-header .establishment {
+              font-weight: 800 !important;
+              letter-spacing: 0.2mm !important;
+            }
             /* 2 colunas x 3 linhas, com gaps menores para ampliar as cartelas */
             .ticket-grid {
               grid-template-columns: repeat(2, 1fr) !important;
               grid-template-rows: repeat(3, 1fr) !important;
-              gap: 1.2mm !important;              /* antes 3mm: mais espaço para as cartelas */
+              gap: 1mm !important;              /* antes 1.2mm */
               width: 100% !important;
               max-width: 100% !important; /* garante que não haja contração */
               inline-size: 100vw !important; 
-              height: 100vh !important;
+              height: calc(100vh - 8mm) !important; /* reserva espaço para o rodapé fixo */
               align-content: stretch !important;
               align-items: stretch !important;
             }
@@ -233,9 +249,10 @@ export default function App() {
               width: 100% !important;
               height: 100% !important;
               display: flex !important;
+              flex-direction: column !important;
               align-items: stretch !important;
               justify-content: stretch !important;
-              border: 1mm solid #424242 !important;
+              border: 0.8mm solid #424242 !important; /* antes 1mm */
               border-radius: 2mm !important;
               overflow: visible !important;     /* não corta a coluna final */
               background: #fff !important;
@@ -245,7 +262,7 @@ export default function App() {
               width: 100% !important;
               max-width: 100% !important;
               height: 100% !important;
-              padding: 1.8mm !important;        /* padding menor => mais área útil */
+              padding: 1.6mm !important;        /* antes 1.8mm */
               display: flex !important;
               flex-direction: column !important;
               justify-content: center !important;
@@ -265,6 +282,22 @@ export default function App() {
               padding: 0 !important;
               border: 0.28mm solid #424242 !important;
               border-radius: 1.2mm !important;
+            }
+            /* Rodapé fixo com validade na impressão */
+            .page-footer {
+              position: fixed !important;
+              bottom: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              height: 8mm !important;               /* altura fixa para cálculo */
+              padding: 1.5mm 6mm !important;        /* antes 2mm 6mm */
+              font-size: 3.2mm !important;
+              color: #111 !important;
+              display: flex !important;
+              align-items: center !important;
+              justify-content: space-between !important;
+              border-top: 0.4mm solid #424242 !important;
+              background: #fff !important;
             }
           }
         `}
@@ -287,7 +320,7 @@ export default function App() {
             onChange={(e) => setQty(Number(e.target.value))}
             style={styles.input}
           />
-          <label style={{ fontWeight: 600 }} htmlFor="validity">Validade:</label>
+          <label style={{ fontWeight: 600 }} htmlFor="validity">Validade: </label>
           <input
             id="validity"
             type="date"
@@ -323,9 +356,9 @@ export default function App() {
                   </span>
                 )}
               </div>
-              {validityDate && (
+              {stripValidity[stripIdx] && (
                 <div style={{ color: "#555" }}>
-                  Validade: {formatDate(validityDate)}
+                  Validade: {formatDate(stripValidity[stripIdx])}
                 </div>
               )}
             </div>
@@ -333,21 +366,30 @@ export default function App() {
             <div style={styles.stripGrid} className="ticket-grid">
               {tickets.map((ticket, idx) => (
                 <div key={idx} style={styles.ticketCard} className="ticket-card">
-                   <div style={styles.ticketBody} className="ticket-body">
-                     {ticketToGrid(ticket).map((row, rIdx) => (
-                       <div key={rIdx} style={styles.ticketRow} className="ticket-row">
-                         {row.map((n, cIdx) => (
-                           <div
-                             key={`${rIdx}-${cIdx}`}
-                             style={{ ...styles.cell, ...(n == null ? styles.cellEmpty : {}) }}
-                             className="cell"
-                           >
-                             {n ?? ""}
-                           </div>
-                         ))}
-                       </div>
-                     ))}
-                   </div>
+                  <div style={styles.ticketHeader} className="ticket-header">
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <span style={styles.establishment} className="establishment">Vispa Altas Horas</span>
+                      <div style={{ whiteSpace: "nowrap" }}>
+                        <span style={styles.smallLabel}>Validade:  {formatDate(stripValidity[0] || validityDate)}</span>
+                        <span>{formatDate(stripValidity[stripIdx] || "")}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={styles.ticketBody} className="ticket-body">
+                    {ticketToGrid(ticket).map((row, rIdx) => (
+                      <div key={rIdx} style={styles.ticketRow} className="ticket-row">
+                        {row.map((n, cIdx) => (
+                          <div
+                            key={`${rIdx}-${cIdx}`}
+                            style={{ ...styles.cell, ...(n == null ? styles.cellEmpty : {}) }}
+                            className="cell"
+                          >
+                            {n ?? ""}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
