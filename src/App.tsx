@@ -210,10 +210,10 @@ export default function App() {
               grid-template-columns: repeat(3, 1fr) !important;
               gap: 14px !important;
             }
-            /* Células com fonte maior na impressão */
+            /* Células com fonte maior na impressão (sem padding para manter quadrado) */
             .ticket-row .cell {
-              font-size: 14pt !important;
-              padding: 10pt 0 !important;
+              font-size: 16pt !important;
+              padding: 0 !important;
             }
             /* Oculta cabeçalho/configurações na impressão */
             .no-print {
@@ -290,15 +290,18 @@ export default function App() {
                   <div style={styles.ticketBody}>
                     {ticketToGrid(ticket).map((row, rIdx) => (
                       <div key={rIdx} style={styles.ticketRow} className="ticket-row">
-                        {row.map((n, cIdx) => (
-                          <div
-                            key={`${rIdx}-${cIdx}`}
-                            style={styles.cell}
-                            className="cell"
-                          >
-                            {n ?? ""}
-                          </div>
-                        ))}
+                        {row.map((n, cIdx) => {
+                          const isEmpty = n == null;
+                          return (
+                            <div
+                              key={`${rIdx}-${cIdx}`}
+                              style={{ ...styles.cell, ...(isEmpty ? styles.cellEmpty : {}) }}
+                              className="cell"
+                            >
+                              {n ?? ""}
+                            </div>
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
@@ -392,18 +395,29 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 6,
   },
   cell: {
+    // Centradas e quadradas
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    aspectRatio: "1 / 1",
+
+    // Visual
     textAlign: "center",
-    padding: "12px 0", // um pouco mais alto para legibilidade
+    padding: 0, // sem padding para manter o quadrado
     borderRadius: 6,
-    background: "#ffffff", // fundo branco para máximo contraste
-    border: "2px solid #424242", // borda mais forte
-    color: "#111", // texto mais escuro
-    fontWeight: 800, // números mais espessos
-    letterSpacing: "0.5px", // números mais “largos”
-    fontVariantNumeric: "tabular-nums", // dígitos com largura uniforme (melhora leitura)
-    minHeight: 36,
+    background: "#ffffff",
+    border: "2px solid #424242",
+    color: "#111",
+    fontWeight: 800,
+    letterSpacing: "0.5px",
+    fontVariantNumeric: "tabular-nums",
+    fontSize: 18, // números maiores na tela
+    // sem minHeight para não alongar verticalmente
     printColorAdjust: "exact" as any,
     WebkitPrintColorAdjust: "exact" as any,
+  },
+  cellEmpty: {
+    background: "#6b7280", // cinza escuro (não preto)
   },
   stripFooter: {
     marginTop: 12,
